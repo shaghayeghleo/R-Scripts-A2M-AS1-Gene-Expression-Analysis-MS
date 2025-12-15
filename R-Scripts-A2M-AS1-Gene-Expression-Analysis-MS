@@ -1,0 +1,118 @@
+# --- Analysis Script for LncRNA A2M-AS1 Gene Expression in MS Patients ---
+# Author: Shaghayegh Mohammadi
+# Description: Example R script demonstrating steps for qPCR data analysis (e.g., ΔΔCt method, statistical tests, visualization)
+# Note: This uses simulated data for demonstration purposes.
+
+# Load required libraries
+# Ensure these packages are installed: install.packages(c("ggplot2", "dplyr"))
+library(ggplot2)
+library(dplyr)
+
+# --- 1. Load or Create Example Data ---
+# Simulated data: Ct values for target gene (A2M-AS1), reference gene (e.g., GAPDH), and sample groups
+# In a real analysis, you would load your data from a CSV file using read.csv()
+set.seed(123) # For reproducible example
+n_control <- 10
+n_ms <- 12
+data <- data.frame(
+  Sample_ID = c(paste0("Ctrl_", 1:n_control), paste0("MS_", 1:n_ms)),
+  Group = c(rep("Control", n_control), rep("MS", n_ms)),
+  Ct_Target = c(rnorm(n_control, mean = 25, sd = 1), rnorm(n_ms, mean = 26.5, sd = 1.2)), # Simulated A2M-AS1 Ct
+  Ct_Reference = c(rnorm(n_control, mean = 18, sd = 0.5), rnorm(n_ms, mean = 18.1, sd = 0.5)) # Simulated GAPDH Ct
+)
+
+# Check data structure
+head(data)
+str(data)
+
+# --- 2. Data Processing: Calculate ΔCt and ΔΔCt ---
+# Filter out any potential missing Ct values (Ct = 40 or higher often indicates no amplification)
+data <- data %>%
+  filter(Ct_Target < 40, Ct_Reference < 40)
+
+# Calculate ΔCt (Target - Reference)
+data$deltaCt <- data$Ct_Target - data$Ct_Reference
+
+# Calculate mean ΔCt for Control group (for ΔΔCt)
+mean_deltaCt_control <- mean(data$deltaCt[data$Group == "Control"], na.rm = TRUE)
+
+# Calculate ΔΔCt (Sample ΔCt - Mean Control ΔCt)
+data$delta_deltaCt <- data$deltaCt - mean_deltaCt_control
+
+# Calculate relative expression (2^(-ΔΔCt))
+data$relative_expression <- 2^(-data$delta_deltaCt)
+
+# View processed data
+print(data)
+
+# --- 3. Statistical Analysis ---
+# Perform a t-test to compare relative expression between groups
+# H0: No difference in mean relative expression between Control and MS
+t_test_result <- t.test(relative_expression ~ Group, data = data)
+print("T-Test Result:")
+print(t_test_result)
+
+# Optional: Mann-Whitney U test (non-parametric alternative)
+wilcox_test_result <- wilcox.test(relative_expression ~ Group, data = data)
+print("Wilcoxon Rank Sum Test Result:")
+print(wilcox_test_result)
+
+# --- 4. Data Visualization ---
+# Create a boxplot of relative expression levels
+p1 <- ggplot(data, aes(x = Group, y = relative_expression, fill = Group)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) + # Add jittered points for individual data
+  labs(
+    title = "Relative Expression of A2M-AS1 in MS vs Control",
+    x = "Group",
+    y = "Relative Expression (2^(-ΔΔCt))"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none", # Remove legend if fill is obvious from x-axis
+    plot.title = element_text(hjust = 0.5) # Center title
+  ) +
+  scale_fill_brewer(type = "qual", palette = "Set1") # Optional: color palette
+
+print(p1)
+
+# Optional: Create a bar plot of mean expression with error bars (SE or SD)
+summary_stats <- data %>%
+  group_by(Group) %>%
+  summarise(
+    mean_expr = mean(relative_expression),
+    se_expr = sd(relative_expression) / sqrt(n()),
+    .groups = 'drop'
+  )
+
+p2 <- ggplot(summary_stats, aes(x = Group, y = mean_expr, fill = Group)) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  geom_errorbar(aes(ymin = mean_expr - se_expr, ymax = mean_expr + se_expr),
+                width = 0.2, color = "black") +
+  labs(
+    title = "Mean Relative Expression of A2M-AS1 in MS vs Control",
+    x = "Group",
+    y = "Mean Relative Expression (2^(-ΔΔCt))"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  scale_fill_brewer(type = "qual", palette = "Set1")
+
+print(p2)
+
+# --- 5. Summary Output ---
+cat("\n--- Analysis Summary ---\n")
+cat("Number of Control Samples:", nrow(data[data$Group == "Control", ]), "\n")
+cat("Number of MS Samples:", nrow(data[data$Group == "MS", ]), "\n")
+cat("T-Test p-value:", t_test_result$p.value, "\n")
+if(t_test_result$p.value < 0.05) {
+  cat("Result: Significant difference in A2M-AS1 expression (p < 0.05)\n")
+} else {
+  cat("Result: No significant difference in A2M-AS1 expression (p >= 0.05)\n")
+}
+cat("Mean Relative Expression (Control):", mean(data$relative_expression[data$Group == "Control"]), "\n")
+cat("Mean Relative Expression (MS):", mean(data$relative_expression[data$Group == "MS"]), "\n")
+cat("--- End of Analysis ---\n")
